@@ -18,6 +18,8 @@ services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=$server_host
       - SERVER_PORT=$server_port
+    ports:
+      - "localhost:5678"
 
 EOF
 
