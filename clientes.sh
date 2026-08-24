@@ -19,12 +19,14 @@ services:
       - SERVER_HOST=$server_host
       - SERVER_PORT=$server_port
     ports:
-      - "localhost:5678"
+      - "127.0.0.1:5678:5678"
+    volumes:
+      - ./output:/output
 
 EOF
 
 {
-  for ((i = 1; i <= cantidad_clientes; i++)); do
+  for ((i = 0; i <= cantidad_clientes - 1; i++)); do
   cat <<EOF
   client_$i:
     build:
@@ -37,6 +39,9 @@ EOF
       - AGENCY_ID=$i
       - SERVER_HOST=$server_host
       - SERVER_PORT=$server_port
+      - INPUT_FILE_NAME=./input/input-$i.csv
+    volumes:
+      - ./input:/input:ro
 
 EOF
   done
