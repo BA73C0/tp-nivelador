@@ -4,7 +4,6 @@ import safe_socket
 from lottery.lottery import Lottery
 from lottery.bet import Bet
 
-_MAX_MESSAGE_SIZE = 10000
 _FINISH_MESSAGE = "FIN DE APUESTAS"
 _BETS_FILE = "/output/bets.csv"
 
@@ -24,9 +23,7 @@ class Server:
             logger.info(action, logger.LogResult.in_progress)
 
             while True:
-                client_message = safe_socket.recv_all(
-                    client_socket, _MAX_MESSAGE_SIZE
-                )
+                client_message = safe_socket.recv_all(client_socket)
 
                 if not client_message:
                     logger.info(
@@ -42,7 +39,9 @@ class Server:
                 if client_message == b"FIN DE APUESTAS":
                     break
 
-                self.lottery.store_bets([str_to_bet(client_message.decode("utf-8"))])
+                bets = client_message.decode("utf-8").split(";")
+
+                self.lottery.store_bets([str_to_bet(bet) for bet in bets])
 
             for bet in self.lottery.load_bets():
                 if self.lottery.has_won(bet):

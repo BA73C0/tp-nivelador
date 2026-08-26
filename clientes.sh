@@ -6,6 +6,7 @@ server_port="5678"
 server_host="server"
 dockerfile_name="Dockerfile"
 build_context="./services/client"
+batch_size="10"
 
 cat > docker-compose.yaml <<EOF
 services:
@@ -41,6 +42,7 @@ EOF
       - SERVER_PORT=$server_port
       - INPUT_FILE=/input/input-$i.csv
       - OUTPUT_FILE=/output/output-$i.csv
+      - BATCH_SIZE=$batch_size
     volumes:
       - ./input:/input:ro
       - ./output:/output

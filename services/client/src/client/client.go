@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -11,7 +12,6 @@ import (
 )
 
 const FINISH_MESSAGE = "FIN DE APUESTAS"
-const MAX_MESSAGE_SIZE = 10000
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
 
@@ -21,6 +21,7 @@ type ClientConfig struct {
 	AgencyId   string
 	InputFile  string
 	OutputFile string
+	BatchSize  int
 }
 
 type Client struct {
@@ -92,6 +93,8 @@ func (client *Client) sendBets() error {
 
 	line := 0
 
+	batch := make([]string, 0, client.config.BatchSize)
+
 	for scanner.Scan() {
 
 		record := client.config.AgencyId + "," + scanner.Text()
@@ -101,15 +104,22 @@ func (client *Client) sendBets() error {
 			return err
 		}
 
-		messageArgs := []any{"agency-id", client.config.AgencyId, "line", line}
-		logger.Info("send-bet", logger.InProgress, messageArgs...)
+		batch = append(batch, record)
 
-		if err := safe_socket.SendAll(client.conn, []byte(record)); err != nil {
-			logger.Error("send-bet", logger.Fail, messageArgs...)
-			return err
+		if len(batch) == client.config.BatchSize {
+			logger.Info("send-bet", logger.InProgress)
+			if err := safe_socket.SendAll(client.conn, []byte(strings.Join(batch, ";"))); err != nil {
+				logger.Error("send-batch", logger.Fail)
+				return err
+			}
 		}
 
 		line++
+	}
+
+	if err := safe_socket.SendAll(client.conn, []byte(strings.Join(batch, ";"))); err != nil {
+		logger.Error("send-batch", logger.Fail)
+		return err
 	}
 
 	messageArgs := []any{"agency-id", client.config.AgencyId, FINISH_MESSAGE}
@@ -132,7 +142,7 @@ func (client *Client) recvWinners() error {
 	messageArgs := []any{"agency-id", client.config.AgencyId}
 
 	for {
-		responseBuffer, err := safe_socket.RecvAll(client.conn, MAX_MESSAGE_SIZE)
+		responseBuffer, err := safe_socket.RecvAll(client.conn)
 		if err != nil {
 			logger.Error("recv-winners", logger.Fail, messageArgs)
 			return err

@@ -26,6 +26,7 @@ services:
       - SERVER_PORT=5678
       - INPUT_FILE=/input/input-0.csv
       - OUTPUT_FILE=/output/output-0.csv
+      - BATCH_SIZE=10
     volumes:
       - ./input:/input:ro
       - ./output:/output

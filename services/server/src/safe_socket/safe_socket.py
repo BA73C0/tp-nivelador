@@ -5,19 +5,13 @@ MAX_MESSAGE_SIZE = 65535 - HEADER_SIZE
 MAX_RETRY = 3
 
 
-def recv_all(socket: socket.socket, size: int) -> bytes:
-    if size < 0:
-        raise ValueError("size must be greater than or equal to zero")
-
-    msg, _ = _recv_all(socket, size)
-
-    if len(msg) > size:
-        return msg[:size]
+def recv_all(socket: socket.socket) -> bytes:
+    msg, _ = _recv_all(socket)
 
     return msg
 
 
-def _recv_all(socket: socket.socket, size: int) -> tuple[bytes, int]:
+def _recv_all(socket: socket.socket) -> tuple[bytes, int]:
     header = _recv(socket, HEADER_SIZE)
     msg_len = (header[0] << 8) | header[1]
     end = header[2]
@@ -25,11 +19,7 @@ def _recv_all(socket: socket.socket, size: int) -> tuple[bytes, int]:
     msg = _recv(socket, msg_len)
 
     while end == 0:
-        new_size = size - msg_len
-        if new_size <= 0:
-            return b"", end
-
-        next_msg, next_end = _recv_all(socket, new_size)
+        next_msg, next_end = _recv_all(socket)
         msg += next_msg
         end = next_end
 

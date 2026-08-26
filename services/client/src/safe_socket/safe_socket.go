@@ -67,19 +67,16 @@ func send(socket io.Writer, bytes []byte, end uint8) error {
 	return nil
 }
 
-func RecvAll(socket io.Reader, size int) ([]byte, error) {
-	msg, _, err := recvAll(socket, size)
+func RecvAll(socket io.Reader) ([]byte, error) {
+	msg, _, err := recvAll(socket)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(msg) > size {
-		return msg[:size], nil
-	}
 	return msg, nil
 }
 
-func recvAll(socket io.Reader, size int) ([]byte, uint8, error) {
+func recvAll(socket io.Reader) ([]byte, uint8, error) {
 	header, err := recv(socket, HEADER_SIZE)
 	if err != nil {
 		return nil, 1, err
@@ -93,11 +90,7 @@ func recvAll(socket io.Reader, size int) ([]byte, uint8, error) {
 	}
 
 	for end == 0 {
-		newSize := size - int(msgLen)
-		if newSize <= 0 {
-			return nil, end, nil
-		}
-		nextMsg, nextEnd, err := recvAll(socket, newSize)
+		nextMsg, nextEnd, err := recvAll(socket)
 		if err != nil {
 			return nil, end, err
 		}
