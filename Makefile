@@ -18,5 +18,7 @@ logs:
 .PHONY: logs
 
 test:
+	mkdir -p logs
+	rm ./logs/* -f
 	PYTHONPATH="$(PWD)" python3 tests/run.py
 .PHONY: test

@@ -1,4 +1,5 @@
 import sys
+from test_case import TestCase
 from tests import (
     OutputFiles,
     SigtermHandling,
@@ -11,7 +12,7 @@ from tests import (
     ClientShortReadWrite,
 )
 
-TEST_CASES = [
+TEST_CASES: list[TestCase] = [
     Json,
     ForcedExit,
     OutputFiles,
@@ -27,14 +28,23 @@ MESSAGE_PADDING = 32
 
 def main():
     for test_case in TEST_CASES:
-        print(f"Testing {test_case.title.ljust(MESSAGE_PADDING, ".")}", end="")
+        print(
+            f"Testing {test_case.title.ljust(MESSAGE_PADDING, ".")}", end="", flush=True
+        )
+
         try:
             test_case.test()
             print("OK")
         except Exception as e:
             print("ERROR")
             print(f"{e}", file=sys.stderr, end="\n\n")
+
+            logs_file_path = test_case.get_service_logs_file_path()
+            if logs_file_path:
+                print("Service Logs can be found in:", logs_file_path)
+
             print(f"HINT: {test_case.error_hint}", file=sys.stderr, end="\n\n")
+
             return 1
     return 0
 

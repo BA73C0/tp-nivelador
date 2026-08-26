@@ -1,4 +1,5 @@
 import json
+from typing import List
 
 from . import shell_cmd
 
@@ -24,6 +25,22 @@ def stop(service_names: list[str], grace_period_seconds=5):
         ["docker", "stop", "-t", str(grace_period_seconds), *service_names],
         capture=False,
     )
+
+
+def get_logs(docker_compose_path: str | None) -> List[str]:
+    cmd = [
+        "docker",
+        "compose",
+    ]
+
+    if docker_compose_path:
+        cmd += ["-f", docker_compose_path]
+
+    cmd += [
+        "logs",
+    ]
+
+    return shell_cmd.run(cmd, capture=True).stdout.decode("utf-8").split("\n")
 
 
 def await_containers(service_names: list[str]) -> int:
