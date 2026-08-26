@@ -16,10 +16,11 @@ const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
 
 type ClientConfig struct {
-	ServerHost    string
-	ServerPort    string
-	AgencyId      string
-	InputFileName string
+	ServerHost string
+	ServerPort string
+	AgencyId   string
+	InputFile  string
+	OutputFile string
 }
 
 type Client struct {
@@ -80,7 +81,7 @@ func (client *Client) Run() error {
 }
 
 func (client *Client) sendBets() error {
-	inputFile, err := os.Open(client.config.InputFileName)
+	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil {
 		logger.Error("open-input-file", logger.Fail)
 		return err
@@ -121,7 +122,7 @@ func (client *Client) sendBets() error {
 }
 
 func (client *Client) recvWinners() error {
-	outputFile, err := os.Create("/output/output-" + client.config.AgencyId + ".csv")
+	outputFile, err := os.Create(client.config.OutputFile)
 	if err != nil {
 		logger.Error("create-output-file", logger.Fail)
 		return err

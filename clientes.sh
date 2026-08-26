@@ -6,7 +6,6 @@ server_port="5678"
 server_host="server"
 dockerfile_name="Dockerfile"
 build_context="./services/client"
-bets_file="/output/bets.csv"
 
 cat > docker-compose.yaml <<EOF
 services:
@@ -19,7 +18,6 @@ services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=$server_host
       - SERVER_PORT=$server_port
-      - BETS_FILE=$bets_file
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
@@ -41,7 +39,8 @@ EOF
       - AGENCY_ID=$i
       - SERVER_HOST=$server_host
       - SERVER_PORT=$server_port
-      - INPUT_FILE_NAME=./input/input-$i.csv
+      - INPUT_FILE=/input/input-$i.csv
+      - OUTPUT_FILE=/output/output-$i.csv
     volumes:
       - ./input:/input:ro
       - ./output:/output

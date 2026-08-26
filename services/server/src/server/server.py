@@ -6,13 +6,14 @@ from lottery.bet import Bet
 
 _MAX_MESSAGE_SIZE = 10000
 _FINISH_MESSAGE = "FIN DE APUESTAS"
+_BETS_FILE = "/output/bets.csv"
 
 
 class Server:
-    def __init__(self, server_host: str, server_port: int, bets_file: str) -> None:
+    def __init__(self, server_host: str, server_port: int) -> None:
         self.server_host = server_host
         self.server_port = server_port
-        self.lottery = Lottery(bets_file)
+        self.lottery = Lottery(_BETS_FILE)
 
     def _handle_client(self, client_socket):
         action = "handle-client"
