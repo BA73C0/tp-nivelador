@@ -63,14 +63,21 @@ func (client *Client) Run() error {
 	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
-	file, err := os.Open(client.config.InputFileName)
+	inputFile, err := os.Open(client.config.InputFileName)
 	if err != nil {
 		logger.Error("open-input-file", logger.Fail)
 		return err
 	}
-	defer file.Close()
+	defer inputFile.Close()
 
-	scanner := bufio.NewScanner(file)
+	outputFile, err := os.Create("/output/output-" + client.config.AgencyId + ".csv")
+	if err != nil {
+		logger.Error("create-output-file", logger.Fail)
+		return err
+	}
+	defer outputFile.Close()
+
+	scanner := bufio.NewScanner(inputFile)
 
 	line := 0
 
@@ -92,6 +99,8 @@ func (client *Client) Run() error {
 		}
 
 		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
+		outputFile.WriteString(string(responseBuffer) + "\n")
+
 		if err != nil {
 			logger.Error("recv-response", logger.Fail, messageArgs...)
 			return err
