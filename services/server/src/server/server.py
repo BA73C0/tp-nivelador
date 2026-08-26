@@ -1,14 +1,18 @@
 import socket
 import logger
 import safe_socket
+from lottery.lottery import Lottery
+from lottery.bet import Bet
 
-_ECHO_SERVER_MESSAGE_SIZE = 1024
+_MAX_MESSAGE_SIZE = 10000
+_FINISH_MESSAGE = "FIN DE APUESTAS"
 
 
 class Server:
-    def __init__(self, server_host: str, server_port: int) -> None:
+    def __init__(self, server_host: str, server_port: int, bets_file: str) -> None:
         self.server_host = server_host
         self.server_port = server_port
+        self.lottery = Lottery(bets_file)
 
     def _handle_client(self, client_socket):
         action = "handle-client"
@@ -20,7 +24,7 @@ class Server:
 
             while True:
                 client_message = safe_socket.recv_all(
-                    client_socket, _ECHO_SERVER_MESSAGE_SIZE
+                    client_socket, _MAX_MESSAGE_SIZE
                 )
 
                 if not client_message:
@@ -33,7 +37,23 @@ class Server:
                     return
                 
                 message_amount += 1
-                safe_socket.send_all(client_socket, client_message)
+
+                if client_message == b"FIN DE APUESTAS":
+                    break
+
+                self.lottery.store_bets([str_to_bet(client_message.decode("utf-8"))])
+
+            for bet in self.lottery.load_bets():
+                if self.lottery.has_won(bet):
+                    logger.info(
+                        action,
+                        logger.LogResult.success,
+                        "winner",
+                        f"{bet.first_name} {bet.last_name}",
+                    )
+                    safe_socket.send_all(client_socket, bet_to_str(bet).encode("utf-8"))
+
+            safe_socket.send_all(client_socket, _FINISH_MESSAGE.encode("utf-8"))
 
         except Exception as e:
             logger.error(
@@ -56,3 +76,17 @@ class Server:
                 logger.info(action, logger.LogResult.success)
 
                 self._handle_client(client_socket)
+
+def str_to_bet(bet_str: str):
+    bet_data = bet_str.split(",")
+    return Bet(
+        int(bet_data[0]),
+        bet_data[1],
+        bet_data[2],
+        int(bet_data[3]),
+        bet_data[4],
+        int(bet_data[5]),
+    )
+
+def bet_to_str(bet: Bet):
+    return f"{bet.first_name},{bet.last_name},{bet.document},{bet.birthdate},{bet.number}"

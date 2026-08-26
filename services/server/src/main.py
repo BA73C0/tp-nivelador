@@ -4,13 +4,14 @@ import sys
 import logger
 import server
 
+BETS_FILE = os.environ["BETS_FILE"]
 SERVER_HOST = os.environ["SERVER_HOST"]
 SERVER_PORT = int(os.environ["SERVER_PORT"])
 
 
 def main():
     logger.init()
-    s = server.Server(SERVER_HOST, SERVER_PORT)
+    s = server.Server(SERVER_HOST, SERVER_PORT, BETS_FILE)
     try:
         s.run()
     except Exception as e:

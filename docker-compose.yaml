@@ -8,6 +8,7 @@ services:
       - PYTHONUNBUFFERED=1
       - SERVER_HOST=server
       - SERVER_PORT=5678
+      - BETS_FILE=/output/bets.csv
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
@@ -27,3 +28,4 @@ services:
       - INPUT_FILE_NAME=./input/input-0.csv
     volumes:
       - ./input:/input:ro
+      - ./output:/output

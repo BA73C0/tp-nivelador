@@ -10,10 +10,10 @@ import (
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
 )
 
+const FINISH_MESSAGE = "FIN DE APUESTAS"
+const MAX_MESSAGE_SIZE = 10000
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
-
-const ECHO_CLIENT_BUFFER_SIZE = 512
 
 type ClientConfig struct {
 	ServerHost    string
@@ -60,9 +60,26 @@ func connectToServer(host, port string) (net.Conn, error) {
 }
 
 func (client *Client) Run() error {
-	const mainAction = "test-echo-server"
 	defer client.conn.Close()
 
+	err := client.sendBets()
+	if err != nil {
+		logger.Error("send-bets", logger.Fail)
+		return err
+	}
+
+	err = client.recvWinners()
+	if err != nil {
+		logger.Error("recv-winners", logger.Fail)
+		return err
+	}
+
+	logger.Info("client", logger.Success, "agency-id", client.config.AgencyId)
+
+	return nil
+}
+
+func (client *Client) sendBets() error {
 	inputFile, err := os.Open(client.config.InputFileName)
 	if err != nil {
 		logger.Error("open-input-file", logger.Fail)
@@ -70,20 +87,13 @@ func (client *Client) Run() error {
 	}
 	defer inputFile.Close()
 
-	outputFile, err := os.Create("/output/output-" + client.config.AgencyId + ".csv")
-	if err != nil {
-		logger.Error("create-output-file", logger.Fail)
-		return err
-	}
-	defer outputFile.Close()
-
 	scanner := bufio.NewScanner(inputFile)
 
 	line := 0
 
 	for scanner.Scan() {
 
-		record := scanner.Text()
+		record := client.config.AgencyId + "," + scanner.Text()
 
 		if err := scanner.Err(); err != nil {
 			logger.Error("read-input", logger.Fail)
@@ -91,30 +101,49 @@ func (client *Client) Run() error {
 		}
 
 		messageArgs := []any{"agency-id", client.config.AgencyId, "line", line}
-		logger.Info(mainAction, logger.InProgress, messageArgs...)
+		logger.Info("send-bet", logger.InProgress, messageArgs...)
 
 		if err := safe_socket.SendAll(client.conn, []byte(record)); err != nil {
-			logger.Error("send-message", logger.Fail, messageArgs...)
-			return err
-		}
-
-		responseBuffer, err := safe_socket.RecvAll(client.conn, ECHO_CLIENT_BUFFER_SIZE)
-		outputFile.WriteString(string(responseBuffer) + "\n")
-
-		if err != nil {
-			logger.Error("recv-response", logger.Fail, messageArgs...)
+			logger.Error("send-bet", logger.Fail, messageArgs...)
 			return err
 		}
 
 		line++
-
-		if string(responseBuffer) == record {
-			logger.Error("check-response", logger.Fail, messageArgs...)
-			return err
-		}
 	}
 
-	logger.Info(mainAction, logger.Success, "agency-id", client.config.AgencyId)
+	messageArgs := []any{"agency-id", client.config.AgencyId, FINISH_MESSAGE}
+	if err := safe_socket.SendAll(client.conn, []byte(FINISH_MESSAGE)); err != nil {
+		logger.Error("send-end-message", logger.Fail, messageArgs)
+		return err
+	}
+
+	return nil
+}
+
+func (client *Client) recvWinners() error {
+	outputFile, err := os.Create("/output/output-" + client.config.AgencyId + ".csv")
+	if err != nil {
+		logger.Error("create-output-file", logger.Fail)
+		return err
+	}
+	defer outputFile.Close()
+
+	messageArgs := []any{"agency-id", client.config.AgencyId}
+
+	for {
+		responseBuffer, err := safe_socket.RecvAll(client.conn, MAX_MESSAGE_SIZE)
+		if err != nil {
+			logger.Error("recv-winners", logger.Fail, messageArgs)
+			return err
+		}
+
+		if string(responseBuffer) == FINISH_MESSAGE {
+			logger.Info("recv-winners", logger.Success, messageArgs...)
+			break
+		}
+
+		outputFile.WriteString(string(responseBuffer) + "\n")
+	}
 
 	return nil
 }
