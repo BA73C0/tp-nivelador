@@ -41,7 +41,7 @@ def main():
 
             logs_file_path = test_case.get_service_logs_file_path()
             if logs_file_path:
-                print("Service Logs can be found in:", logs_file_path)
+                print("Service Logs can be found at:", logs_file_path)
 
             print(f"HINT: {test_case.error_hint}", file=sys.stderr, end="\n\n")
 
