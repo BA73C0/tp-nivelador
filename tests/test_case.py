@@ -33,7 +33,7 @@ class TestCase:
 
     @classmethod
     def get_service_logs_file_path(cls) -> str | None:
-        return "logs/" + cls.__name__ + ".log" if cls.has_service_logs else None
+        return "failed_test.log" if cls.has_service_logs else None
 
     @staticmethod
     def await_net_io_stop(service_name: str, pooling_await_seconds=1):
