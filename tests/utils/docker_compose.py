@@ -26,10 +26,10 @@ def find_environment_variable(service, target_environment_variable) -> str:
     raise LookupError(f"Environment variable not found {target_environment_variable}")
 
 
-def dump_logs(docker_compose_path: str, dump_file_path: str):
+def dump_logs(docker_compose_path: str, dump_file):
     shell_cmd.run(
-        ["docker", "compose", "-f", docker_compose_path, "logs", ">", dump_file_path],
-        capture=False,
+        ["docker", "compose", "-f", docker_compose_path, "logs"],
+        redirect_output=dump_file,
     )
 
 
@@ -45,6 +45,6 @@ def get_container_last_logs(docker_compose_path: str, service_name: str, tail=10
             "--tail",
             str(tail),
         ],
-        capture=True,
+        redirect_output=shell_cmd.PIPE,
     )
     return result.stdout.decode("utf-8")

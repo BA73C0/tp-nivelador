@@ -21,7 +21,8 @@ class TestCase:
             docker.down(docker_compose_path)
             return result
         except:
-            docker_compose.dump_logs(docker_compose_path, LOGS_DUMP_FILE_PATH)
+            with open(LOGS_DUMP_FILE_PATH, "w") as dump_file:
+                docker_compose.dump_logs(docker_compose_path, dump_file)
             docker.down(docker_compose_path)
             raise
 
