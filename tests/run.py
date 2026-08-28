@@ -38,9 +38,9 @@ def main():
             print("OK")
         except Exception as e:
             print("ERROR")
-            print(f"{e}", file=sys.stderr, end="\n\n")
+            print(f"{e}", file=sys.stderr)
             if os.path.isfile(LOGS_DUMP_FILE_PATH):
-                print("Service Logs can be found at:", LOGS_DUMP_FILE_PATH)
+                print("Service Logs can be found at:", LOGS_DUMP_FILE_PATH, end="\n\n")
             print(f"HINT: {test_case.error_hint}", file=sys.stderr, end="\n\n")
             return 1
 
