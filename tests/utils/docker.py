@@ -27,22 +27,6 @@ def stop(service_names: list[str], grace_period_seconds=5):
     )
 
 
-def get_logs(docker_compose_path: str | None) -> List[str]:
-    cmd = [
-        "docker",
-        "compose",
-    ]
-
-    if docker_compose_path:
-        cmd += ["-f", docker_compose_path]
-
-    cmd += [
-        "logs",
-    ]
-
-    return shell_cmd.run(cmd, capture=True).stdout.decode("utf-8").split("\n")
-
-
 def await_containers(service_names: list[str]) -> int:
     result = shell_cmd.run(
         ["docker", "container", "wait", *service_names], capture=True

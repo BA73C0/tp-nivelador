@@ -1,39 +1,29 @@
 import time
 from typing import Callable
 
-from utils import shell_cmd
-from utils import docker
+from utils import docker, docker_compose
+
+LOGS_DUMP_FILE_PATH = "failed_test.log"
 
 
 class TestCase:
     title: str = ""
     error_hint: str = ""
-    has_service_logs: bool = True
 
-    @classmethod
+    @staticmethod
     def with_docker_run(
-        cls,
         docker_compose_path: str,
         test_callback: Callable,
     ):
         try:
             docker.up(docker_compose_path)
-            return test_callback()
-        except:
-            service_logs_path = cls.get_service_logs_file_path()
-            if service_logs_path:
-                with open(service_logs_path, "w") as logs_file:
-                    logs = [
-                        line + "\n" for line in docker.get_logs(docker_compose_path)
-                    ]
-                    logs_file.writelines(logs)
-            raise
-        finally:
+            result = test_callback()
             docker.down(docker_compose_path)
-
-    @classmethod
-    def get_service_logs_file_path(cls) -> str | None:
-        return "failed_test.log" if cls.has_service_logs else None
+            return result
+        except:
+            docker_compose.dump_logs(docker_compose_path, LOGS_DUMP_FILE_PATH)
+            docker.down(docker_compose_path)
+            raise
 
     @staticmethod
     def await_net_io_stop(service_name: str, pooling_await_seconds=1):
