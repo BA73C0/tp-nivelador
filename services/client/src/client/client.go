@@ -16,7 +16,7 @@ import (
 const FINISH_MESSAGE = "FIN DE APUESTAS"
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
-const ESTIMATED_BET_SIZE = 55
+const ESTIMATED_BET_SIZE = 65
 
 type ClientConfig struct {
 	ServerHost string
