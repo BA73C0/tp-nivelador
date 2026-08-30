@@ -22,9 +22,6 @@ services:
       - AGENCY_QUORUM_MIN=$cantidad_clientes
     ports:
       - "127.0.0.1:5678:5678"
-    volumes:
-      - ./output:/output
-
 EOF
 
 {

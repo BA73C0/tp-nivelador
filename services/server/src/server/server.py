@@ -6,7 +6,7 @@ from lottery.lottery import Lottery
 from lottery.bet import Bet
 
 _FINISH_MESSAGE = "FIN DE APUESTAS"
-_BETS_FILE = "/output/bets.csv"
+_BETS_FILE = "/tmp/bets.csv"
 
 
 class Server:
