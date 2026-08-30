@@ -11,6 +11,7 @@ from lottery.lottery import Lottery
 
 _FINISH_MESSAGE = "FIN DE APUESTAS"
 _BETS_FILE = "/tmp/bets.csv"
+_CLIENT_SOCKET_TIMEOUT = 5  # seconds
 
 class ServerCodes(IntEnum):
     SUCCESS = 0
@@ -25,6 +26,7 @@ class Server:
         self.server_port = server_port
         self.agency_quorum_min = agency_quorum_min
         self.lottery = Lottery(_BETS_FILE)
+        self.shutting_down = False
         self.agencies_ready = 0
         self.servers_interrupt_sockets = []
 
@@ -51,9 +53,9 @@ class Server:
 
             with agencies_quorum:
                 while self.agencies_ready < self.agency_quorum_min:
-                    if self.agencies_ready == -1:
+                    if self.shutting_down:
                         logger.info(
-                            "waiting-quorum", logger.LogResult.fail, "interrupt", "received"
+                            "waiting-quorum", logger.LogResult.fail, "shutting", "down"
                         )
                         return
                     agencies_quorum.wait()
@@ -95,9 +97,9 @@ class Server:
             while True:
                 for key, _ in sel.select():
                     with agencies_quorum:
-                        if self.agencies_ready == -1:
+                        if self.shutting_down:
                             logger.info(
-                                action, logger.LogResult.fail, "interrupt", "received"
+                                action, logger.LogResult.fail, "shutting", "down"
                             )
                             return ServerCodes.INTERRUPT_READ
                 
@@ -216,6 +218,7 @@ class Server:
                             try:
                                 logger.info(action, logger.LogResult.in_progress)
                                 client_socket, _ = server_socket.accept()
+                                client_socket.settimeout(_CLIENT_SOCKET_TIMEOUT)
                             except Exception as e:
                                 sel.unregister(server_socket)
                                 logger.error(action, logger.LogResult.fail)
@@ -245,7 +248,7 @@ class Server:
 
             # Aviso a todos los hilos que están esperando en agencies_quorum que deben terminar
             with agencies_quorum:
-                self.agencies_ready = -1
+                self.shutting_down = True
                 agencies_quorum.notify_all()
 
 
