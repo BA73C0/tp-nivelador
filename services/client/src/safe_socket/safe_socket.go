@@ -12,12 +12,12 @@ func SendMessage(socket io.Writer, bytes []byte) error {
 	// El tamaño del mensaje sea mayor a MAX_MESSAGE_SIZE
 	// Envío un mensaje de tamaño MAX_MESSAGE_SIZE
 	for len(bytes) > MAX_MESSAGE_SIZE {
-		msgSize := uint16(len(bytes) - HEADER_SIZE)
+		msgSize := uint16(MAX_MESSAGE_SIZE - HEADER_SIZE)
 		bytes[0] = byte(msgSize >> 8)
 		bytes[1] = byte(msgSize)
 		bytes[2] = byte(0) // Indica que hay más mensajes por enviar
 
-		err := SendAll(socket, bytes)
+		err := SendAll(socket, bytes[:MAX_MESSAGE_SIZE])
 		if err != nil {
 			return err
 		}
