@@ -11,7 +11,7 @@ from lottery.lottery import Lottery
 
 _FINISH_MESSAGE = "FIN DE APUESTAS"
 _BETS_FILE = "/tmp/bets.csv"
-_CLIENT_SOCKET_TIMEOUT = 5  # seconds
+_CLIENT_SOCKET_TIMEOUT = 1  # seconds
 
 class ServerCodes(IntEnum):
     SUCCESS = 0
@@ -68,9 +68,31 @@ class Server:
                         "winner",
                         f"{bet.first_name} {bet.last_name}",
                     )
-                    safe_socket.send_message(client_socket, bet_to_str(bet).encode("utf-8"))
+                    try:
+                        safe_socket.send_message(client_socket, bet_to_str(bet).encode("utf-8"))
+                    except (TimeoutError, socket.timeout):
+                        if self.shutting_down:
+                            logger.info(
+                                action, logger.LogResult.fail, "shutting", "down"
+                            )
+                            return
+                        logger.info(
+                            action, logger.LogResult.fail, "client", "timeout"
+                        )
+                        return
 
-            safe_socket.send_message(client_socket, _FINISH_MESSAGE.encode("utf-8"))
+            try:
+                safe_socket.send_message(client_socket, _FINISH_MESSAGE.encode("utf-8"))
+            except (TimeoutError, socket.timeout):
+                if self.shutting_down:
+                    logger.info(
+                        action, logger.LogResult.fail, "shutting", "down"
+                    )
+                    return
+                logger.info(
+                    action, logger.LogResult.fail, "client", "timeout"
+                )
+                return
 
         except Exception as e:
             logger.error(
@@ -111,7 +133,18 @@ class Server:
                         return ServerCodes.INTERRUPT_READ
                     
                     if key.fileobj == client_socket:
-                        agency, end_code = self._recv_client_bet_batch(client_socket, agencies_quorum, file_lock)
+                        try:
+                            agency, end_code = self._recv_client_bet_batch(client_socket, agencies_quorum, file_lock)
+                        except (TimeoutError, socket.timeout):
+                            if self.shutting_down:
+                                logger.info(
+                                    action, logger.LogResult.fail, "shutting", "down"
+                                )
+                                return ServerCodes.INTERRUPT_READ
+                            logger.info(
+                                action, logger.LogResult.fail, "client", "timeout"
+                            )
+                            return ServerCodes.CLIENT_DISCONNECTED
 
                         if agency_id is None and agency is not None:
                             agency_id = agency
