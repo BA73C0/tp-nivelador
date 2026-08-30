@@ -26,7 +26,7 @@ class OutputFiles(TestCase):
         lottery = Lottery(storage_path=None)
 
         expected = set()
-        with open(input_file, newline="") as f:
+        with open(input_file, newline="", encoding="utf-8") as f:
             for row in csv.reader(f):
                 if not row:
                     continue
@@ -44,7 +44,7 @@ class OutputFiles(TestCase):
                     expected.add(tuple(row))
 
         actual = set()
-        with open(output_file, newline="") as f:
+        with open(output_file, newline="", encoding="utf-8") as f:
             for row in csv.reader(f):
                 if not row:
                     continue
