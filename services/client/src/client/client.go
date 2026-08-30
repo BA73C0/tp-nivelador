@@ -118,8 +118,11 @@ func (client *Client) sendBets(ctx context.Context) error {
 
 	scanner := bufio.NewScanner(inputFile)
 
-	batch := make([]byte, 0, ESTIMATED_BET_SIZE*client.config.BatchSize)
+	batch := make([]byte, 0, (ESTIMATED_BET_SIZE*client.config.BatchSize)+safe_socket.HEADER_SIZE)
 	recordsInBatch := 0
+
+	// Placeholder para el header
+	batch = append(batch, []byte{0, 0, 0}...)
 
 	for scanner.Scan() {
 		if recordsInBatch > 0 {
@@ -149,7 +152,7 @@ func (client *Client) sendBets(ctx context.Context) error {
 					return err
 				}
 
-				batch = batch[:0]
+				batch = batch[:safe_socket.HEADER_SIZE]
 				recordsInBatch = 0
 			}
 		}
@@ -185,7 +188,8 @@ func (client *Client) sendBets(ctx context.Context) error {
 	}
 
 	messageArgs := []any{"agency-id", client.config.AgencyId, FINISH_MESSAGE}
-	if err := safe_socket.SendMessage(client.conn, []byte(FINISH_MESSAGE)); err != nil {
+	message := append([]byte{0, 0, 0}, []byte(FINISH_MESSAGE)...)
+	if err := safe_socket.SendMessage(client.conn, message); err != nil {
 		ctxErr := checkContext(ctx, stop, stopc, client.conn, action, true)
 		if ctxErr != nil {
 			return ctxErr
