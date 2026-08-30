@@ -1,12 +1,18 @@
 import socket
 import threading
 import logger
+import signal
 import safe_socket
+from selectors import DefaultSelector, EVENT_READ
 from lottery.lottery import Lottery
 from lottery.bet import Bet
 
 _FINISH_MESSAGE = "FIN DE APUESTAS"
 _BETS_FILE = "/tmp/bets.csv"
+
+_CLIENT_DESCONECTED_CODE = -1
+_BETS_END_CODE = -2
+_INTERRUPT_READ_CODE = -3
 
 
 class Server:
@@ -16,8 +22,9 @@ class Server:
         self.agency_quorum_min = agency_quorum_min
         self.lottery = Lottery(_BETS_FILE)
         self.agencies_ready = 0
+        self.servers_interrupt_sockets = []
 
-    def _handle_client(self, client_socket, agencies_quorum, file_lock):
+    def _handle_client(self, client_socket, agencies_quorum, file_lock, interrupt_read):
         action = "handle-client"
         agency_id = None
         
@@ -25,32 +32,26 @@ class Server:
 
             logger.info(action, logger.LogResult.in_progress)
 
-            while True:
-                client_message = safe_socket.recv_all(client_socket)
+            agency_id = self._recv_messages(client_socket, agencies_quorum, file_lock, interrupt_read)
 
-                if not client_message:
-                    logger.info(
-                        action,
-                        logger.LogResult.success
-                    )
-                    return
-                
-                if client_message == b"FIN DE APUESTAS":
-                    with agencies_quorum:
-                        self.agencies_ready += 1
-                        agencies_quorum.notify_all()
-                    break
-
-                bets = [str_to_bet(bet) for bet in client_message.decode("utf-8").split(";")]
-
-                if agency_id is None:
-                    agency_id = bets[0].agency_id
-
-                with file_lock:
-                    self.lottery.store_bets(bets)
+            if agency_id == _INTERRUPT_READ_CODE:
+                logger.info(
+                    action, logger.LogResult.fail, "interrupt", "received"
+                )
+                return
+            elif agency_id == _CLIENT_DESCONECTED_CODE:
+                logger.info(
+                    action, logger.LogResult.fail, "client", "disconnected"
+                )
+                return
 
             with agencies_quorum:
                 while self.agencies_ready < self.agency_quorum_min:
+                    if self.agencies_ready == -1:
+                        logger.info(
+                            "waiting-quorum", logger.LogResult.fail, "interrupt", "received"
+                        )
+                        return
                     agencies_quorum.wait()
 
             for bet in self.lottery.load_bets():
@@ -71,29 +72,178 @@ class Server:
             )
             raise e
 
-    def run(self):
-        action = "accept-connection"
+        finally:
+            client_socket.close()
+            interrupt_read.close()
 
-        clients_threads = []
+    def _recv_messages(self, client_socket, agencies_quorum, file_lock, interrupt_read) -> int:
+        action = "handle-client"
+        agency_id = None
+
+        sel = DefaultSelector()
+        sel.register(interrupt_read, EVENT_READ)
+        sel.register(client_socket, EVENT_READ)
+        
+        try:
+
+            logger.info(action, logger.LogResult.in_progress)
+
+            while True:
+                for key, _ in sel.select():
+                    with agencies_quorum:
+                        if self.agencies_ready == -1:
+                            logger.info(
+                                action, logger.LogResult.fail, "interrupt", "received"
+                            )
+                            return _INTERRUPT_READ_CODE
+                
+                    if key.fileobj == interrupt_read:
+                        logger.info(
+                            action, logger.LogResult.fail, "interrupt", "received"
+                        )
+                        interrupt_read.recv(1)
+                        return _INTERRUPT_READ_CODE
+                    
+                    if key.fileobj == client_socket:
+                        agency, end_code = self._recv_client_bet_batch(client_socket, agencies_quorum, file_lock)
+
+                        if agency_id is None and agency is not None:
+                            agency_id = agency
+
+                        if end_code is not None and end_code == _BETS_END_CODE:
+                            return agency_id
+                        elif end_code is not None and end_code == _CLIENT_DESCONECTED_CODE:
+                            logger.info(
+                                action, logger.LogResult.fail, "client", "disconnected"
+                            )
+                            return end_code
+
+        except Exception as e:
+            logger.error(
+                action, logger.LogResult.fail
+            )
+            raise e
+
+        finally:
+            sel.unregister(interrupt_read)
+            sel.unregister(client_socket)
+            sel.close()
+
+    def _recv_client_bet_batch(self, client_socket, agencies_quorum, file_lock) -> tuple[int, int]:
+        client_message = safe_socket.recv_all(client_socket)
+        action = "receive-client-bet-batch"
+        agency_id = None
+        
+        if not client_message:
+            logger.info(
+                action,
+                logger.LogResult.fail
+            )
+            return None, _CLIENT_DESCONECTED_CODE
+        
+        if client_message == b"FIN DE APUESTAS":
+            with agencies_quorum:
+                self.agencies_ready += 1
+                agencies_quorum.notify_all()
+            return None, _BETS_END_CODE
+
+        bets = [str_to_bet(bet) for bet in client_message.decode("utf-8").split(";")]
+
+        if agency_id is None:
+            agency_id = bets[0].agency_id
+
+        with file_lock:
+            self.lottery.store_bets(bets)
+
+        return agency_id, None
+
+    def _handler_sigterm(self, signum, frame):
+        logger.info("signal-handler", logger.LogResult.in_progress, "SIGTERM", "received")
+        for interrupt_write in self.servers_interrupt_sockets:
+            interrupt_write.send(b'\0')
+
+    def run(self):
         agencies_quorum = threading.Condition()
         file_lock = threading.Lock()
 
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
-            server_socket.bind((self.server_host, self.server_port))
-            server_socket.listen()
-            while True:
-                try:
-                    logger.info(action, logger.LogResult.in_progress)
-                    client_socket, _ = server_socket.accept()
-                except Exception as e:
-                    logger.error(action, logger.LogResult.fail)
-                    raise e
-                logger.info(action, logger.LogResult.success)
+        interrupt_read, interrupt_write = socket.socketpair()
 
-                thread = threading.Thread(target=self._handle_client, args=(client_socket, agencies_quorum, file_lock))
-                clients_threads.append(thread)
+        self.servers_interrupt_sockets.append(interrupt_write)
 
-                thread.start()
+        signal.signal(signal.SIGTERM, self._handler_sigterm)
+
+        clients_threads = self._accept_connection(agencies_quorum, file_lock, interrupt_read)
+
+        for thread in clients_threads:
+            thread.join()
+
+        for interrupt_write in self.servers_interrupt_sockets:
+            interrupt_write.close()
+
+        return clients_threads
+
+    def _accept_connection(self, agencies_quorum, file_lock, interrupt_read) -> list[threading.Thread]:
+        action = "accept-connection"
+        clients_threads = []
+
+        sel = DefaultSelector()
+        sel.register(interrupt_read, EVENT_READ)
+
+        try:
+
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+                sel.register(server_socket, EVENT_READ)
+                server_socket.bind((self.server_host, self.server_port))
+                server_socket.listen()
+                
+                logger.info(action, logger.LogResult.in_progress)
+
+                while True:
+                    for key, _ in sel.select():
+                        if key.fileobj == interrupt_read:
+                            logger.info(
+                                action, logger.LogResult.fail, "interrupt", "received"
+                            )
+                            interrupt_read.recv(1)
+                            sel.unregister(server_socket)
+                            return clients_threads
+                        
+                        if key.fileobj == server_socket:
+                            try:
+                                logger.info(action, logger.LogResult.in_progress)
+                                client_socket, _ = server_socket.accept()
+                            except Exception as e:
+                                sel.unregister(server_socket)
+                                logger.error(action, logger.LogResult.fail)
+                                raise e
+                            
+                            interrupt_read_thread, interrupt_write = socket.socketpair()
+                            self.servers_interrupt_sockets.append(interrupt_write)
+            
+                            logger.info(action, logger.LogResult.success)
+
+                            thread = threading.Thread(target=self._handle_client, args=(client_socket, agencies_quorum, file_lock, interrupt_read_thread))
+                            clients_threads.append(thread)
+            
+                            thread.start()
+
+            return clients_threads
+        
+        except Exception as e:
+            logger.error(action, logger.LogResult.fail)
+            raise e
+
+        finally:
+            sel.unregister(interrupt_read)
+            sel.close()
+            interrupt_read.close()
+            server_socket.close()
+
+            # Aviso a todos los hilos que están esperando en agencies_quorum que deben terminar
+            with agencies_quorum:
+                self.agencies_ready = -1
+                agencies_quorum.notify_all()
+
 
 def str_to_bet(bet_str: str):
     bet_data = bet_str.split(",")
