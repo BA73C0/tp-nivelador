@@ -4,38 +4,21 @@ HEADER_SIZE = 3
 MAX_MESSAGE_SIZE = 65535 - HEADER_SIZE
 MAX_RETRY = 3
 
-
-def recv_all(socket: socket.socket) -> bytes:
-    msg, _ = _recv_all(socket)
-
+def recv_message(socket: socket.socket) -> bytes:
+    msg, _ = _recv(socket)
+    
     return msg
 
-
-def _recv_all(socket: socket.socket) -> tuple[bytes, int]:
-    header = _recv(socket, HEADER_SIZE)
-    msg_len = (header[0] << 8) | header[1]
-    end = header[2]
-
-    msg = _recv(socket, msg_len)
-
-    while end == 0:
-        next_msg, next_end = _recv_all(socket)
-        msg += next_msg
-        end = next_end
-
-    return msg, end
-
-
-def _recv(socket: socket.socket, size: int) -> bytes:
-    buffer = bytearray(size)
+def recv_all(socket: socket.socket, n: int) -> bytes:
+    buffer = bytearray(n)
     bytes_read = 0
     retry_count = 0
 
-    while bytes_read < size:
+    while bytes_read < n:
         if retry_count >= MAX_RETRY:
             raise ConnectionError("max retry count reached while receiving data")
 
-        chunk = socket.recv(size - bytes_read)
+        chunk = socket.recv(n - bytes_read)
 
         if len(chunk) == 0:
             retry_count += 1
@@ -47,8 +30,22 @@ def _recv(socket: socket.socket, size: int) -> bytes:
 
     return bytes(buffer)
 
+def _recv(socket: socket.socket) -> tuple[bytes, int]:
+    header = recv_all(socket, HEADER_SIZE)
+    msg_len = (header[0] << 8) | header[1]
+    end = header[2]
 
-def send_all(socket: socket.socket, data: bytes) -> None:
+    msg = recv_all(socket, msg_len)
+
+    while end == 0:
+        next_msg, next_end = _recv(socket)
+        msg += next_msg
+        end = next_end
+
+    return msg, end
+
+
+def send_message(socket: socket.socket, data: bytes) -> None:
     view = memoryview(data)
     bytes_sent = 0
 
@@ -59,16 +56,7 @@ def send_all(socket: socket.socket, data: bytes) -> None:
     if bytes_sent < len(view):
         _send(socket, view[bytes_sent:], 1)
 
-
-def _send(socket: socket.socket, data: memoryview, end: int) -> None:
-    msg_size = len(data)
-    header = bytes([msg_size >> 8, msg_size & 0xFF, end])
-
-    _write_full(socket, memoryview(header))
-    _write_full(socket, data)
-
-
-def _write_full(socket: socket.socket, data: memoryview) -> None:
+def send_all(socket: socket.socket, data: bytes) -> None:
     bytes_sent = 0
     retry_count = 0
 
@@ -84,3 +72,10 @@ def _write_full(socket: socket.socket, data: memoryview) -> None:
             retry_count = 0
 
         bytes_sent += sent
+
+def _send(socket: socket.socket, data: memoryview, end: int) -> None:
+    msg_size = len(data)
+    header = bytes([msg_size >> 8, msg_size & 0xFF, end])
+
+    send_all(socket, memoryview(header))
+    send_all(socket, data)

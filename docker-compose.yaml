@@ -11,6 +11,7 @@ services:
       - AGENCY_QUORUM_MIN=2
     ports:
       - "127.0.0.1:5678:5678"
+
   client_0:
     build:
       context: ./services/client

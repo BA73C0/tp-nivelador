@@ -3,16 +3,20 @@ import threading
 import logger
 import signal
 import safe_socket
+from enum import IntEnum
 from selectors import DefaultSelector, EVENT_READ
-from lottery.lottery import Lottery
+
 from lottery.bet import Bet
+from lottery.lottery import Lottery
 
 _FINISH_MESSAGE = "FIN DE APUESTAS"
 _BETS_FILE = "/tmp/bets.csv"
 
-_CLIENT_DESCONECTED_CODE = -1
-_BETS_END_CODE = -2
-_INTERRUPT_READ_CODE = -3
+class ServerCodes(IntEnum):
+    SUCCESS = 0
+    CLIENT_DISCONNECTED = -1
+    BETS_END = -2
+    INTERRUPT_READ = -3
 
 
 class Server:
@@ -34,12 +38,12 @@ class Server:
 
             agency_id = self._recv_messages(client_socket, agencies_quorum, file_lock, interrupt_read)
 
-            if agency_id == _INTERRUPT_READ_CODE:
+            if agency_id == ServerCodes.INTERRUPT_READ:
                 logger.info(
                     action, logger.LogResult.fail, "interrupt", "received"
                 )
                 return
-            elif agency_id == _CLIENT_DESCONECTED_CODE:
+            elif agency_id == ServerCodes.CLIENT_DISCONNECTED:
                 logger.info(
                     action, logger.LogResult.fail, "client", "disconnected"
                 )
@@ -62,9 +66,9 @@ class Server:
                         "winner",
                         f"{bet.first_name} {bet.last_name}",
                     )
-                    safe_socket.send_all(client_socket, bet_to_str(bet).encode("utf-8"))
+                    safe_socket.send_message(client_socket, bet_to_str(bet).encode("utf-8"))
 
-            safe_socket.send_all(client_socket, _FINISH_MESSAGE.encode("utf-8"))
+            safe_socket.send_message(client_socket, _FINISH_MESSAGE.encode("utf-8"))
 
         except Exception as e:
             logger.error(
@@ -95,14 +99,14 @@ class Server:
                             logger.info(
                                 action, logger.LogResult.fail, "interrupt", "received"
                             )
-                            return _INTERRUPT_READ_CODE
+                            return ServerCodes.INTERRUPT_READ
                 
                     if key.fileobj == interrupt_read:
                         logger.info(
                             action, logger.LogResult.fail, "interrupt", "received"
                         )
                         interrupt_read.recv(1)
-                        return _INTERRUPT_READ_CODE
+                        return ServerCodes.INTERRUPT_READ
                     
                     if key.fileobj == client_socket:
                         agency, end_code = self._recv_client_bet_batch(client_socket, agencies_quorum, file_lock)
@@ -110,9 +114,9 @@ class Server:
                         if agency_id is None and agency is not None:
                             agency_id = agency
 
-                        if end_code is not None and end_code == _BETS_END_CODE:
+                        if end_code is not None and end_code == ServerCodes.BETS_END:
                             return agency_id
-                        elif end_code is not None and end_code == _CLIENT_DESCONECTED_CODE:
+                        elif end_code is not None and end_code == ServerCodes.CLIENT_DISCONNECTED:
                             logger.info(
                                 action, logger.LogResult.fail, "client", "disconnected"
                             )
@@ -130,7 +134,7 @@ class Server:
             sel.close()
 
     def _recv_client_bet_batch(self, client_socket, agencies_quorum, file_lock) -> tuple[int, int]:
-        client_message = safe_socket.recv_all(client_socket)
+        client_message = safe_socket.recv_message(client_socket)
         action = "receive-client-bet-batch"
         agency_id = None
         
@@ -139,13 +143,13 @@ class Server:
                 action,
                 logger.LogResult.fail
             )
-            return None, _CLIENT_DESCONECTED_CODE
+            return None, ServerCodes.CLIENT_DISCONNECTED
         
         if client_message == b"FIN DE APUESTAS":
             with agencies_quorum:
                 self.agencies_ready += 1
                 agencies_quorum.notify_all()
-            return None, _BETS_END_CODE
+            return None, ServerCodes.BETS_END
 
         bets = [str_to_bet(bet) for bet in client_message.decode("utf-8").split(";")]
 

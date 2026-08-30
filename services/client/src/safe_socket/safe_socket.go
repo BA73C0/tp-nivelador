@@ -9,8 +9,7 @@ const HEADER_SIZE = 3
 const MAX_MESSAGE_SIZE = 65535 - HEADER_SIZE
 const MAX_RETRY = 3
 
-func SendAll(socket io.Writer, bytes []byte) error {
-
+func SendMessage(socket io.Writer, bytes []byte) error {
 	// Mientras queden bytes por enviar y
 	// El tamaño del mensaje sea mayor a MAX_MESSAGE_SIZE
 	// Envío un mensaje de tamaño MAX_MESSAGE_SIZE
@@ -37,23 +36,23 @@ func send(socket io.Writer, bytes []byte, end uint8) error {
 	msgSize := uint16(len(bytes))
 	header := []byte{byte(msgSize >> 8), byte(msgSize), byte(end)}
 
-	if err := writeFull(socket, header); err != nil {
+	if err := SendAll(socket, header); err != nil {
 		return err
 	}
 
-	return writeFull(socket, bytes)
+	return SendAll(socket, bytes)
 }
 
-func writeFull(socket io.Writer, bytes []byte) error {
+func SendAll(socket io.Writer, b []byte) error {
 	bytesSent := 0
 	retryCount := 0
 
-	for bytesSent < len(bytes) {
+	for bytesSent < len(b) {
 		if retryCount >= MAX_RETRY {
 			return errors.New("max retry count reached while sending data")
 		}
 
-		n, err := socket.Write(bytes[bytesSent:])
+		n, err := socket.Write(b[bytesSent:])
 
 		if n == 0 && err == nil {
 			retryCount++
@@ -71,8 +70,8 @@ func writeFull(socket io.Writer, bytes []byte) error {
 	return nil
 }
 
-func RecvAll(socket io.Reader) ([]byte, error) {
-	msg, _, err := recvAll(socket)
+func RecvMessage(socket io.Reader) ([]byte, error) {
+	msg, _, err := recv(socket)
 	if err != nil {
 		return nil, err
 	}
@@ -80,37 +79,12 @@ func RecvAll(socket io.Reader) ([]byte, error) {
 	return msg, nil
 }
 
-func recvAll(socket io.Reader) ([]byte, uint8, error) {
-	header, err := recv(socket, HEADER_SIZE)
-	if err != nil {
-		return nil, 1, err
-	}
-	msgLen := (uint16(header[0]) << 8) | uint16(header[1])
-	var end uint8 = header[2]
-
-	msg, err := recv(socket, int(msgLen))
-	if err != nil && err != io.EOF {
-		return nil, end, err
-	}
-
-	for end == 0 {
-		nextMsg, nextEnd, err := recvAll(socket)
-		if err != nil {
-			return nil, end, err
-		}
-		msg = append(msg, nextMsg...)
-		end = nextEnd
-	}
-
-	return msg, end, nil
-}
-
-func recv(socket io.Reader, size int) ([]byte, error) {
-	buff := make([]byte, size)
+func RecvAll(socket io.Reader, n int) ([]byte, error) {
+	buff := make([]byte, n)
 	bytesRead := 0
 	retryCount := 0
 
-	for bytesRead < size {
+	for bytesRead < n {
 
 		if retryCount >= MAX_RETRY {
 			return buff, errors.New("max retry count reached while sending data")
@@ -131,4 +105,29 @@ func recv(socket io.Reader, size int) ([]byte, error) {
 	}
 
 	return buff, nil
+}
+
+func recv(socket io.Reader) ([]byte, uint8, error) {
+	header, err := RecvAll(socket, HEADER_SIZE)
+	if err != nil {
+		return nil, 1, err
+	}
+	msgLen := (uint16(header[0]) << 8) | uint16(header[1])
+	var end uint8 = header[2]
+
+	msg, err := RecvAll(socket, int(msgLen))
+	if err != nil && err != io.EOF {
+		return nil, end, err
+	}
+
+	for end == 0 {
+		nextMsg, nextEnd, err := recv(socket)
+		if err != nil {
+			return nil, end, err
+		}
+		msg = append(msg, nextMsg...)
+		end = nextEnd
+	}
+
+	return msg, end, nil
 }
