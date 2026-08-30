@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"net"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/7574-sistemas-distribuidos/tp-nivelador/src/logger"
@@ -14,6 +13,7 @@ import (
 const FINISH_MESSAGE = "FIN DE APUESTAS"
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
+const ESTIMATED_BET_SIZE = 55
 
 type ClientConfig struct {
 	ServerHost string
@@ -91,37 +91,41 @@ func (client *Client) sendBets() error {
 
 	scanner := bufio.NewScanner(inputFile)
 
-	line := 0
-
-	batch := make([]string, 0, client.config.BatchSize)
+	batch := make([]byte, 0, 4096)
+	recordsInBatch := 0
 
 	for scanner.Scan() {
-
-		record := client.config.AgencyId + "," + scanner.Text()
+		if recordsInBatch > 0 {
+			batch = append(batch, ';')
+		}
 
 		if err := scanner.Err(); err != nil {
 			logger.Error("read-input", logger.Fail)
 			return err
 		}
 
-		batch = append(batch, record)
+		batch = append(batch, client.config.AgencyId...)
+		batch = append(batch, ',')
+		batch = append(batch, scanner.Bytes()...)
 
-		if len(batch) == client.config.BatchSize {
-			logger.Info("send-bet", logger.InProgress)
-			if err := safe_socket.SendAll(client.conn, []byte(strings.Join(batch, ";"))); err != nil {
+		recordsInBatch++
+
+		if recordsInBatch == client.config.BatchSize {
+			if err := safe_socket.SendAll(client.conn, batch); err != nil {
 				logger.Error("send-batch", logger.Fail)
 				return err
 			}
 
 			batch = batch[:0]
+			recordsInBatch = 0
 		}
-
-		line++
 	}
 
-	if err := safe_socket.SendAll(client.conn, []byte(strings.Join(batch, ";"))); err != nil {
-		logger.Error("send-batch", logger.Fail)
-		return err
+	if recordsInBatch > 0 {
+		if err := safe_socket.SendAll(client.conn, batch); err != nil {
+			logger.Error("send-batch", logger.Fail)
+			return err
+		}
 	}
 
 	messageArgs := []any{"agency-id", client.config.AgencyId, FINISH_MESSAGE}

@@ -34,23 +34,26 @@ func SendAll(socket io.Writer, bytes []byte) error {
 }
 
 func send(socket io.Writer, bytes []byte, end uint8) error {
-	var size uint16 = uint16(len(bytes) + HEADER_SIZE)
-	var msgSize uint16 = uint16(len(bytes))
+	msgSize := uint16(len(bytes))
+	header := []byte{byte(msgSize >> 8), byte(msgSize), byte(end)}
 
-	msg := make([]byte, 0, size)
-	msg = append(msg, byte(msgSize>>8), byte(msgSize), byte(end))
-	msg = append(msg, bytes...)
+	if err := writeFull(socket, header); err != nil {
+		return err
+	}
 
-	var bytesSent uint16 = 0
+	return writeFull(socket, bytes)
+}
+
+func writeFull(socket io.Writer, bytes []byte) error {
+	bytesSent := 0
 	retryCount := 0
 
-	for bytesSent < size {
-
+	for bytesSent < len(bytes) {
 		if retryCount >= MAX_RETRY {
 			return errors.New("max retry count reached while sending data")
 		}
 
-		n, err := socket.Write(msg[bytesSent:])
+		n, err := socket.Write(bytes[bytesSent:])
 
 		if n == 0 && err == nil {
 			retryCount++
@@ -61,7 +64,8 @@ func send(socket io.Writer, bytes []byte, end uint8) error {
 		if err != nil {
 			return err
 		}
-		bytesSent += uint16(n)
+
+		bytesSent += n
 	}
 
 	return nil

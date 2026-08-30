@@ -48,32 +48,35 @@ def _recv(socket: socket.socket, size: int) -> bytes:
     return bytes(buffer)
 
 
-def send_all(socket: socket.socket, bytes: bytes) -> None:
-    while len(bytes) > MAX_MESSAGE_SIZE:
-        _send(socket, bytes[:MAX_MESSAGE_SIZE], 0)
-        bytes = bytes[MAX_MESSAGE_SIZE:]
+def send_all(socket: socket.socket, data: bytes) -> None:
+    view = memoryview(data)
+    bytes_sent = 0
 
-    if len(bytes) > 0:
-        _send(socket, bytes, 1)
+    while len(view) - bytes_sent > MAX_MESSAGE_SIZE:
+        _send(socket, view[bytes_sent : bytes_sent + MAX_MESSAGE_SIZE], 0)
+        bytes_sent += MAX_MESSAGE_SIZE
+
+    if bytes_sent < len(view):
+        _send(socket, view[bytes_sent:], 1)
 
 
-def _send(socket: socket.socket, bytes: bytes, end: int) -> None:
-    size = len(bytes) + HEADER_SIZE
-    msg_size = len(bytes)
-    msg = bytearray()
-    msg.append(msg_size >> 8)
-    msg.append(msg_size & 0xFF)
-    msg.append(end)
-    msg.extend(bytes)
+def _send(socket: socket.socket, data: memoryview, end: int) -> None:
+    msg_size = len(data)
+    header = bytes([msg_size >> 8, msg_size & 0xFF, end])
 
+    _write_full(socket, memoryview(header))
+    _write_full(socket, data)
+
+
+def _write_full(socket: socket.socket, data: memoryview) -> None:
     bytes_sent = 0
     retry_count = 0
 
-    while bytes_sent < size:
+    while bytes_sent < len(data):
         if retry_count >= MAX_RETRY:
             raise ConnectionError("max retry count reached while sending data")
 
-        sent = socket.send(msg[bytes_sent:])
+        sent = socket.send(data[bytes_sent:])
 
         if sent == 0:
             retry_count += 1
