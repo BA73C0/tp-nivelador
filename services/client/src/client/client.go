@@ -112,6 +112,8 @@ func (client *Client) sendBets() error {
 				logger.Error("send-batch", logger.Fail)
 				return err
 			}
+
+			batch = batch[:0]
 		}
 
 		line++
