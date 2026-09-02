@@ -27,8 +27,35 @@ TEST_CASES = [
 MESSAGE_PADDING = 32
 
 
+def selected_test_cases():
+    if len(sys.argv) < 2:
+        return TEST_CASES
+
+    requested_test = sys.argv[1].lower()
+    matching_test_cases = [
+        test_case
+        for test_case in TEST_CASES
+        if requested_test in test_case.__name__.lower()
+        or requested_test in test_case.title.lower()
+    ]
+
+    if not matching_test_cases:
+        available_tests = ", ".join(test_case.__name__ for test_case in TEST_CASES)
+        raise ValueError(
+            f"Unknown test '{sys.argv[1]}'. Available tests: {available_tests}"
+        )
+
+    return matching_test_cases
+
+
 def main():
-    for test_case in TEST_CASES:
+    try:
+        test_cases = selected_test_cases()
+    except ValueError as e:
+        print(f"{e}", file=sys.stderr)
+        return 1
+
+    for test_case in test_cases:
         print(f"Testing {test_case.title.ljust(MESSAGE_PADDING, '.')}", end="")
         try:
             test_case.test()

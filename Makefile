@@ -19,5 +19,5 @@ logs:
 
 test:
 	rm failed_test.log -f
-	PYTHONPATH="$(PWD)" python3 tests/run.py
+	PYTHONPATH="$(PWD)" python3 tests/run.py $(TEST)
 .PHONY: test
