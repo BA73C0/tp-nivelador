@@ -3,6 +3,7 @@ package client
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"os"
 	"os/signal"
@@ -14,9 +15,12 @@ import (
 )
 
 const FINISH_MESSAGE = "FIN DE APUESTAS"
+const ACK_MESSAGE = "ACK"
+
 const CONNECTION_ATTEMPTS_MAX = 3
 const CONNECTION_ATTEMPS_DELAY_MS = 200
 const ESTIMATED_BET_SIZE = 65
+const BATCH_RATIO_ACK = 1
 
 type ClientConfig struct {
 	ServerHost string
@@ -99,7 +103,8 @@ func (client *Client) Run() error {
 }
 
 func (client *Client) sendBets(ctx context.Context) error {
-	action := "send-bets"
+	const action = "send-bets"
+	batchesSent := 0
 
 	inputFile, err := os.Open(client.config.InputFile)
 	if err != nil {
@@ -108,52 +113,24 @@ func (client *Client) sendBets(ctx context.Context) error {
 	}
 	defer inputFile.Close()
 
-	// Registro de un AfterFunc que se ejecutará cuando el contexto se cancele o expire.
-	// Esta función establece un deadline de escritura en el socket y cierra el canal stopc.
-	stopc := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() {
-		client.conn.SetWriteDeadline(time.Now())
-		close(stopc)
-	})
-
+	stopc, stop := client.setDeadlineOnCancel(ctx, true)
+	stopcACK, stopACK := client.setDeadlineOnCancel(ctx, false)
 	scanner := bufio.NewScanner(inputFile)
-
-	batch := make([]byte, 0, (ESTIMATED_BET_SIZE*client.config.BatchSize)+safe_socket.HEADER_SIZE)
-	recordsInBatch := 0
-
-	// Placeholder para el header
-	batch = append(batch, []byte{0, 0, 0}...)
+	batch := newBetBatch(client.config.BatchSize)
 
 	for scanner.Scan() {
-		if recordsInBatch > 0 {
-			batch = append(batch, ';')
+		batch.append(client.config.AgencyId, scanner.Bytes())
+		if !batch.isFull(client.config.BatchSize) {
+			continue
+		}
+		if err := client.sendBatch(ctx, stop, stopc, action, batch); err != nil {
+			return err
 		}
 
-		batch = append(batch, client.config.AgencyId...)
-		batch = append(batch, ',')
-		batch = append(batch, scanner.Bytes()...)
-
-		recordsInBatch++
-
-		if recordsInBatch == client.config.BatchSize {
-			select {
-			case <-ctx.Done():
-				logger.Info(action, logger.Fail, "context", "done")
-				batch = batch[:0]
-				stop()
-				return ctx.Err()
-			default:
-				if err := safe_socket.SendMessage(client.conn, batch); err != nil {
-					ctxErr := checkContext(ctx, stop, stopc, client.conn, action, true)
-					if ctxErr != nil {
-						return ctxErr
-					}
-					logger.Error(action, logger.Fail)
-					return err
-				}
-
-				batch = batch[:safe_socket.HEADER_SIZE]
-				recordsInBatch = 0
+		batchesSent++
+		if batchesSent%BATCH_RATIO_ACK == 0 {
+			if err := client.recvAck(ctx, stopACK, stopcACK); err != nil {
+				return err
 			}
 		}
 	}
@@ -167,28 +144,66 @@ func (client *Client) sendBets(ctx context.Context) error {
 		return err
 	}
 
-	if recordsInBatch > 0 {
-		select {
-		case <-ctx.Done():
-			logger.Info(action, logger.Fail, "context", "done")
-			batch = batch[:0]
-			stop()
-			return ctx.Err()
-		default:
-			if err := safe_socket.SendMessage(client.conn, batch); err != nil {
-				ctxErr := checkContext(ctx, stop, stopc, client.conn, action, true)
-				if ctxErr != nil {
-					return ctxErr
-				}
-				logger.Error(action, logger.Fail)
-				return err
-			}
-			batch = batch[:0]
+	if batch.hasRecords() {
+		if err := client.sendBatch(ctx, stop, stopc, action, batch); err != nil {
+			return err
+		}
+
+		if err := client.recvAck(ctx, stopACK, stopcACK); err != nil {
+			return err
 		}
 	}
 
+	if err := client.sendFinishMessage(ctx, stop, stopc); err != nil {
+		return err
+	}
+
+	return checkContext(ctx, stop, stopc, client.conn, action, true)
+}
+
+func (client *Client) sendBatch(ctx context.Context, stop func() bool, stopc <-chan struct{}, action string, batch *betBatch) error {
+	if err := checkDone(ctx, stop, action, batch); err != nil {
+		return err
+	}
+
+	if err := safe_socket.SendMessage(client.conn, batch.bytes); err != nil {
+		ctxErr := checkContext(ctx, stop, stopc, client.conn, action, true)
+		if ctxErr != nil {
+			return ctxErr
+		}
+		logger.Error(action, logger.Fail)
+		return err
+	}
+
+	batch.reset()
+	return nil
+}
+
+func (client *Client) recvAck(ctx context.Context, stop func() bool, stopc <-chan struct{}) error {
+	responseBuffer, err := safe_socket.RecvMessage(client.conn)
+
+	if err != nil {
+		ctxErr := checkContext(ctx, stop, stopc, client.conn, "recv-ack", false)
+		if ctxErr != nil {
+			return ctxErr
+		}
+		logger.Error("recv-ack", logger.Fail)
+		return err
+	}
+
+	if string(responseBuffer) != ACK_MESSAGE {
+		logger.Error("recv-ack", logger.Fail, "expected", ACK_MESSAGE, "got", string(responseBuffer))
+		return errors.New("invalid ack message received")
+	}
+
+	return nil
+}
+
+func (client *Client) sendFinishMessage(ctx context.Context, stop func() bool, stopc <-chan struct{}) error {
+	const action = "send-bets"
 	messageArgs := []any{"agency-id", client.config.AgencyId, FINISH_MESSAGE}
 	message := append([]byte{0, 0, 0}, []byte(FINISH_MESSAGE)...)
+
 	if err := safe_socket.SendMessage(client.conn, message); err != nil {
 		ctxErr := checkContext(ctx, stop, stopc, client.conn, action, true)
 		if ctxErr != nil {
@@ -198,7 +213,19 @@ func (client *Client) sendBets(ctx context.Context) error {
 		return err
 	}
 
-	return checkContext(ctx, stop, stopc, client.conn, action, true)
+	return nil
+}
+
+func checkDone(ctx context.Context, stop func() bool, action string, batch *betBatch) error {
+	select {
+	case <-ctx.Done():
+		logger.Info(action, logger.Fail, "context", "done")
+		batch.clear()
+		stop()
+		return ctx.Err()
+	default:
+		return nil
+	}
 }
 
 func (client *Client) recvWinners(ctx context.Context) error {
@@ -211,14 +238,7 @@ func (client *Client) recvWinners(ctx context.Context) error {
 	}
 	defer outputFile.Close()
 
-	// Registro de un AfterFunc que se ejecutará cuando el contexto se cancele o expire.
-	// Esta función establece un deadline de lectura en el socket y cierra el canal stopc.
-	stopc := make(chan struct{})
-	stop := context.AfterFunc(ctx, func() {
-		client.conn.SetReadDeadline(time.Now())
-		close(stopc)
-	})
-
+	stopc, stop := client.setDeadlineOnCancel(ctx, false)
 	messageArgs := []any{"agency-id", client.config.AgencyId}
 
 	for {
@@ -248,13 +268,21 @@ func (client *Client) recvWinners(ctx context.Context) error {
 	}
 }
 
+func (client *Client) setDeadlineOnCancel(ctx context.Context, write bool) (<-chan struct{}, func() bool) {
+	stopc := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		if write {
+			client.conn.SetWriteDeadline(time.Now())
+		} else {
+			client.conn.SetReadDeadline(time.Now())
+		}
+		close(stopc)
+	})
+	return stopc, stop
+}
+
 func checkContext(ctx context.Context, stop func() bool, stopc <-chan struct{}, socket net.Conn, action string, write bool) error {
-	// Si el contexto se canceló (antes o durante la lectura/escritura),
-	// espero a que termine de establecer el deadline, lo restauro y devuelvo el error de cancelación del contexto.
 	if !stop() {
-		// Comentario de la docu oficial:
-		// The AfterFunc was started.
-		// Wait for it to complete, and reset the Conn's deadline.
 		<-stopc
 		if write {
 			socket.SetWriteDeadline(time.Time{})

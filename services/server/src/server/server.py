@@ -8,9 +8,12 @@ from enum import IntEnum
 from lottery.bet import Bet
 from lottery.lottery import Lottery
 
-_FINISH_MESSAGE = "FIN DE APUESTAS"
+_FINISH_MESSAGE = b"FIN DE APUESTAS"
+_ACK_MESSAGE = b"ACK"
+
 _SOCKET_TIMEOUT = 1  # seconds
 _MAX_RETRIES = 3  # maximum number of retries for socket operations
+_BATCH_RATIO_ACK = 1
 
 class ServerCodes(IntEnum):
     SUCCESS = 0
@@ -53,7 +56,7 @@ class Server:
                 return
 
             self._send_client_message(
-                client_socket, _FINISH_MESSAGE.encode("utf-8"), action
+                client_socket, _FINISH_MESSAGE, action
             )
 
         except Exception as e:
@@ -129,6 +132,7 @@ class Server:
     def _recv_messages(self, client_socket, agencies_quorum, file_lock) -> int:
         action = "handle-client"
         agency_id = None
+        batches_received = 0
 
         try:
             logger.info(action, logger.LogResult.in_progress)
@@ -138,8 +142,10 @@ class Server:
                     return ServerCodes.SHUTTING_DOWN
 
                 agency_id_batch, end_code = self._recv_client_bet_batch(
-                    client_socket, agencies_quorum, file_lock
+                    client_socket, agencies_quorum, file_lock, batches_received
                 )
+
+                batches_received += 1
                 
                 if agency_id_batch is not None and agency_id is None:
                     agency_id = agency_id_batch
@@ -153,7 +159,7 @@ class Server:
             logger.error(action, logger.LogResult.fail)
             raise e
 
-    def _recv_client_bet_batch(self, client_socket, agencies_quorum, file_lock) -> tuple[int, int]:
+    def _recv_client_bet_batch(self, client_socket, agencies_quorum, file_lock, batches_received) -> tuple[int, int]:
         action = "receive-client-bet-batch"
         retries = 0
 
@@ -168,7 +174,7 @@ class Server:
                 # Reset de la cantidad de reintentos después de recibir un mensaje exitosamente
                 retries = 0 
 
-                if client_message == b"FIN DE APUESTAS":
+                if client_message == _FINISH_MESSAGE:
                     with agencies_quorum:
                         self.agencies_ready += 1
                         agencies_quorum.notify_all()
@@ -178,6 +184,9 @@ class Server:
 
                 with file_lock:
                     self.lottery.store_bets(bets)
+
+                if batches_received % _BATCH_RATIO_ACK == 0:
+                    safe_socket.send_message(client_socket, _ACK_MESSAGE)
 
                 return bets[0].agency_id, None
 
@@ -257,11 +266,6 @@ class Server:
             with agencies_quorum:
                 agencies_quorum.notify_all()
 
-class ReceiveResult:
-    def __init__(self, agency_id: int, end_code: int) -> None:
-        self.agency_id = agency_id
-        self.end_code = end_code
-
 
 def str_to_bet(bet_str: str):
     bet_data = bet_str.split(",")
@@ -273,7 +277,6 @@ def str_to_bet(bet_str: str):
         bet_data[4],
         int(bet_data[5]),
     )
-
 
 def bet_to_str(bet: Bet):
     return f"{bet.first_name},{bet.last_name},{bet.document},{bet.birthdate},{bet.number}"

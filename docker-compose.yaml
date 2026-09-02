@@ -9,6 +9,7 @@ services:
       - SERVER_HOST=server
       - SERVER_PORT=5678
       - AGENCY_QUORUM_MIN=2
+      - BETS_FILE=/output/bets.csv
     ports:
       - "127.0.0.1:5678:5678"
     volumes:

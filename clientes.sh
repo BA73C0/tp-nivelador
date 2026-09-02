@@ -20,6 +20,7 @@ services:
       - SERVER_HOST=$server_host
       - SERVER_PORT=$server_port
       - AGENCY_QUORUM_MIN=$cantidad_clientes
+      - BETS_FILE=/output/bets.csv
     ports:
       - "127.0.0.1:5678:5678"
     volumes:
