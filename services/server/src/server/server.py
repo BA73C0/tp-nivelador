@@ -9,7 +9,6 @@ from lottery.bet import Bet
 from lottery.lottery import Lottery
 
 _FINISH_MESSAGE = "FIN DE APUESTAS"
-_BETS_FILE = "/output/bets.csv"
 _SOCKET_TIMEOUT = 1  # seconds
 _MAX_RETRIES = 3  # maximum number of retries for socket operations
 
@@ -21,11 +20,17 @@ class ServerCodes(IntEnum):
 
 
 class Server:
-    def __init__(self, server_host: str, server_port: int, agency_quorum_min: int) -> None:
+    def __init__(
+        self,
+        server_host: str,
+        server_port: int,
+        agency_quorum_min: int,
+        bets_file_path: str,
+    ) -> None:
         self.server_host = server_host
         self.server_port = server_port
         self.agency_quorum_min = agency_quorum_min
-        self.lottery = Lottery(_BETS_FILE)
+        self.lottery = Lottery(bets_file_path)
         self.shutting_down = False
         self.agencies_ready = 0
 
