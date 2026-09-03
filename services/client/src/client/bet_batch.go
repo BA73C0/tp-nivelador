@@ -1,15 +1,12 @@
 package client
 
-import "github.com/7574-sistemas-distribuidos/tp-nivelador/src/safe_socket"
-
 type betBatch struct {
 	bytes   []byte
 	records int
 }
 
 func newBetBatch(batchSize int) *betBatch {
-	bytes := make([]byte, 0, (ESTIMATED_BET_SIZE*batchSize)+safe_socket.HEADER_SIZE)
-	bytes = append(bytes, []byte{0, 0, 0}...)
+	bytes := make([]byte, 0, ESTIMATED_BET_SIZE*batchSize)
 	return &betBatch{bytes: bytes}
 }
 
@@ -32,7 +29,7 @@ func (batch *betBatch) hasRecords() bool {
 }
 
 func (batch *betBatch) reset() {
-	batch.bytes = batch.bytes[:safe_socket.HEADER_SIZE]
+	batch.bytes = batch.bytes[:0]
 	batch.records = 0
 }
 

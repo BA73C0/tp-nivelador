@@ -1,6 +1,9 @@
 import socket
-import logger
 
+try:
+    import logger
+except ModuleNotFoundError:
+    from services.server.src import logger
 from .safe_socket import recv_all, send_all
 
 HEADER_SIZE = 5
@@ -116,7 +119,12 @@ class SocketProtocol:
             is_duplicate = packet.msg_id == self.last_received_id
 
             if is_duplicate:
-                logger.warning(f"Received duplicate message ID: {packet.msg_id}")
+                logger.info(
+                    "recv-message",
+                    logger.LogResult.fail,
+                    "duplicate",
+                    f"message {packet.msg_id}",
+                )
                 retries += 1
 
                 if retries > self.max_retries:
